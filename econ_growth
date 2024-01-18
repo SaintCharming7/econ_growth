@@ -1,0 +1,100 @@
+%% 1. functional forms and parameters
+% parameters
+alpha = .36; % capital income share
+beta = .95; % subjective discount factor
+delta = .10; % depreciation rate
+sigma = 2; % relative risk aversion parameter
+
+% functional forms
+u = @(c) c.^(1-sigma)/(1-sigma)-1/(1-sigma); % preferences
+f = @(k) k.^alpha; % technology
+f1 = @(k) alpha*k.^(alpha-1); % rental rate
+
+%%
+
+%% 2. solve for steady-state capital stock
+% use anonymous function
+steady_state_condition = @(k) beta*(f1(k)+(1-delta))-1;
+k0 = 4; % initial guess
+options = optimset('Display','iter'); % display iterations
+% use built-in rootfinding
+kstar = fsolve(steady_state_condition,k0,options);
+
+%%
+
+%% 3. state space discretization
+n = 500; % number of grid points
+% set up grid around the steady state
+range = .10;
+kmin = (1-range)*kstar; % lower bound of the grid
+kmax = (1+range)*kstar; % upper bound of the grid
+% equally spaced grid (column vector)
+kgrid = linspace(kmin,kmax,n)';
+% transformation into matrices that can be used for the evaluation
+% of functions. kmat varies along columns, kpmat varies along rows.
+[kmat,kpmat] = ndgrid(kgrid,kgrid); % kp denotes k’
+
+%%
+
+%% 4. value function iteration
+% initial guess: one-period problem, thus kp=0.
+V = u(f(kgrid)+(1-delta)*kgrid);
+% continuation values and consumption possibilities for any
+% combination of k and kp.
+Vpmat = u(f(kpmat)+(1-delta)*kpmat);
+cmat = f(kmat)+(1-delta)*kmat-kpmat;
+% momentary utility
+% map negative consumption values into very low utility level.
+umat = (cmat<=0).*(-10^6)+(cmat>0).*u(cmat);
+% set convergence tolerance
+tol = 10^(-8);
+maxit = 500;
+fprintf('iter norm \n');
+
+tic
+for j=1:maxit
+% search for kp = argmax umat+beta*Vmat for each k
+% max is along dimension two (row)
+[Vnext,indices] = max(umat+beta*Vpmat,[],2);
+error = max(abs(Vnext-V));
+fprintf('%4i %2.1e \n',j,error);
+% stopping rule
+if error < tol
+fprintf('Elapsed Time = %4.2f Seconds\n',toc);
+break;
+else
+V = Vnext;
+ctil = f(kgrid) + (1-delta)*kgrid - kgrid(indices);
+
+for h = 1:j^2
+V = u(ctil)+beta*V(indices);
+
+end
+
+Vpmat = repmat(V',n,1);
+end
+end
+k = kgrid; kp = kgrid(indices); c = f(k)+(1-delta)*k-kp;
+
+%%
+
+%% 5. plot unknown functions
+scrsz = get(0,'ScreenSize');
+figure('Position',[scrsz(3)*1/4 scrsz(4)*1/4 scrsz(3)*1/2 ...
+scrsz(4)*1/2]);
+% policy function
+subplot(2,2,1)
+plot(k,[k,kp]); % plot k and kp at the same time
+title('Policy Function for Capital');
+xlabel('k'); ylabel('g(k)');
+legend('45◦-line','Policy Function','Location','Best');
+% value function
+subplot(2,2,2)
+plot(k,V);
+title('Value Function');
+xlabel('k'); ylabel('V(k)');
+
+subplot(2,2,3)
+plot(k,c);
+title('Consumption Function');
+xlabel('k'); ylabel('c(k)');
